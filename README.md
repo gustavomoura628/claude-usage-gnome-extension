@@ -6,10 +6,11 @@ A GNOME Shell 42 extension that displays your Claude AI usage in the Ubuntu top 
 
 ## What it shows
 
-- **5-hour session** usage with progress bar, percentage, and time-position marker
-- **7-day rolling** usage with progress bar, percentage, and time-position marker
+- **5-hour session** and **7-day rolling** usage as progress bars with percentages
+- Live countdown timers showing time until each window resets
+- Time-position markers on each bar showing how far through the current window you are
 - Color coding: blue (<50%), amber (50–80%), red (>80%)
-- Click to expand a dropdown with countdowns, per-model breakdown, and a refresh button
+- Click to expand a dropdown with detailed countdowns, per-model breakdown, and a refresh button
 
 ## Requirements
 
@@ -20,13 +21,12 @@ A GNOME Shell 42 extension that displays your Claude AI usage in the Ubuntu top 
 ## Install
 
 ```bash
+git clone https://github.com/gustavomoura628/claude-usage-gnome-extension.git
+cd claude-usage-gnome-extension
 ./install.sh
-gnome-extensions enable claude-usage@local
 ```
 
-Then restart GNOME Shell:
-- **X11:** Alt+F2 → `r` → Enter
-- **Wayland:** Log out and back in
+On X11 the shell restarts automatically. On Wayland you'll need to log out and back in.
 
 ## How it works
 
