@@ -1,0 +1,167 @@
+/* Panel widget container */
+.claude-panel-box {
+    spacing: 12px;
+}
+
+.claude-bar-label {
+    font-size: 11px;
+    font-weight: bold;
+    color: #cccccc;
+    min-width: 42px;
+    text-align: right;
+}
+
+.claude-pct-label {
+    font-size: 11px;
+    color: #aaaaaa;
+    min-width: 32px;
+}
+
+.claude-separator {
+    width: 1px;
+    background-color: #555555;
+    margin-left: 6px;
+    margin-right: 6px;
+}
+
+/* Progress bar track — background drawn via Cairo */
+.claude-bar-track {
+    background-color: transparent;
+    border-radius: 0;
+    padding: 0;
+    border: 0;
+    margin: 0;
+}
+
+.claude-bar-fill {
+    border-radius: 6px;
+    padding: 0;
+    border: 0;
+    margin: 0;
+}
+
+.claude-bar-fill-blue {
+    background-color: #3584e4;
+}
+
+.claude-bar-fill-amber {
+    background-color: #e5a50a;
+}
+
+.claude-bar-fill-red {
+    background-color: #e01b24;
+}
+
+.claude-bar-marker {
+    background-color: rgba(255, 255, 255, 0.85);
+    width: 2px;
+    border-radius: 1px;
+    padding: 0;
+    border: 0;
+    margin: 0;
+}
+
+/* Dropdown styles — dark mode */
+.claude-dropdown-box {
+    padding: 12px 16px;
+    spacing: 4px;
+    min-width: 300px;
+    background-color: #1e1e1e;
+    border-radius: 12px;
+}
+
+.claude-dropdown-header {
+    font-size: 15px;
+    font-weight: bold;
+    color: #ffffff;
+    padding: 4px 0;
+}
+
+.claude-dropdown-section-label {
+    font-size: 13px;
+    font-weight: bold;
+    color: #bbbbbb;
+    padding-top: 10px;
+    padding-bottom: 2px;
+}
+
+.claude-dropdown-bar-track {
+    background-color: #3d3d3d;
+    border-radius: 6px;
+    height: 14px;
+}
+
+.claude-dropdown-bar-fill {
+    border-radius: 6px;
+    height: 14px;
+}
+
+.claude-dropdown-bar-marker {
+    background-color: rgba(255, 255, 255, 0.9);
+    width: 2px;
+    height: 14px;
+    border-radius: 1px;
+}
+
+.claude-dropdown-pct {
+    font-size: 13px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.claude-dropdown-reset {
+    font-size: 12px;
+    color: #888888;
+}
+
+.claude-dropdown-model-label {
+    font-size: 12px;
+    color: #999999;
+    padding-left: 8px;
+}
+
+.claude-dropdown-model-pct {
+    font-size: 12px;
+    color: #cccccc;
+}
+
+.claude-dropdown-status {
+    font-size: 11px;
+    color: #666666;
+    padding-top: 4px;
+}
+
+.claude-dropdown-error {
+    font-size: 12px;
+    color: #e01b24;
+    padding: 4px 0;
+}
+
+.claude-dropdown-bar-row {
+    spacing: 10px;
+}
+
+.claude-dropdown-model-row {
+    spacing: 8px;
+    padding-left: 8px;
+}
+
+/* Dark mode for the dropdown menu */
+.claude-dropdown-menu {
+    background-color: #1e1e1e;
+    border-radius: 12px;
+    padding: 4px 0;
+}
+
+.claude-dropdown-menu .popup-menu-item {
+    color: #cccccc;
+}
+
+.claude-dropdown-menu .popup-separator-menu-item .popup-separator-menu-item-separator {
+    background-color: #333333;
+}
+
+.claude-dropdown-menu .popup-menu-item:hover,
+.claude-dropdown-menu .popup-menu-item:focus {
+    background-color: #333333;
+}
