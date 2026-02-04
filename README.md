@@ -26,7 +26,17 @@ cd claude-usage-gnome-extension
 ./install.sh
 ```
 
-On X11 the shell restarts automatically. On Wayland you'll need to log out and back in.
+Log out and back in for the extension to load.
+
+## Usage logging
+
+The extension logs usage data every 5 minutes to `~/.local/share/claude-usage/history.jsonl`. Each line is a JSON object:
+
+```json
+{"ts":"2026-02-04T03:59:24.336Z","plan":"max","tier":"default_claude_max_5x","5h":10,"5h_resets":"2026-02-04T08:00:00Z","7d":26,"7d_resets":"2026-02-06T14:00:00Z","sonnet_7d":0}
+```
+
+Fields: timestamp, subscription plan, rate limit tier, 5-hour and 7-day utilization percentages, window reset times, and per-model breakdowns (when available). Window start times can be derived from the reset times (subtract 5h or 7d).
 
 ## How it works
 
@@ -40,7 +50,8 @@ The extension reads your OAuth token from `~/.claude/.credentials.json` and poll
 | `extension.js` | Lifecycle: `init()`, `enable()`, `disable()` |
 | `indicator.js` | Panel widget + dropdown menu + Cairo-drawn progress bars |
 | `apiClient.js` | Async HTTP client (Soup 2.4) |
-| `credentialReader.js` | Reads OAuth token from disk |
+| `credentialReader.js` | Reads OAuth token and plan info from disk |
+| `usageLogger.js` | Appends usage snapshots to JSONL log file |
 | `stylesheet.css` | Dropdown and label styling |
 
 ## Uninstall

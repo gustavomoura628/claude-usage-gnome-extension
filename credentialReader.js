@@ -22,13 +22,19 @@ function readToken() {
 
         const text = imports.byteArray.toString(contents);
         const data = JSON.parse(text);
-        const token = data.claudeAiOauth && data.claudeAiOauth.accessToken;
+        const oauth = data.claudeAiOauth;
+        const token = oauth && oauth.accessToken;
 
         if (!token) {
             return { ok: false, error: 'no-token' };
         }
 
-        return { ok: true, token: token };
+        return {
+            ok: true,
+            token: token,
+            plan: oauth.subscriptionType || null,
+            tier: oauth.rateLimitTier || null,
+        };
     } catch (e) {
         return { ok: false, error: 'parse-error' };
     }

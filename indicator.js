@@ -9,6 +9,7 @@ const ExtensionUtils = imports.misc.extensionUtils;
 const Me = ExtensionUtils.getCurrentExtension();
 const ApiClient = Me.imports.apiClient;
 const CredentialReader = Me.imports.credentialReader;
+const UsageLogger = Me.imports.usageLogger;
 
 const REFRESH_INTERVAL_S = 45;
 const FIVE_HOUR_S = 5 * 3600;
@@ -425,6 +426,8 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             this._pendingMessage = null;
         }
 
+        const credInfo = { plan: cred.plan, tier: cred.tier };
+
         this._pendingMessage = ApiClient.fetchUsage(cred.token, (error, data) => {
             this._pendingMessage = null;
 
@@ -436,6 +439,7 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
                 this._lastError = null;
                 this._lastData = data;
                 this._lastFetchTime = Date.now();
+                UsageLogger.maybeLog(data, credInfo);
             }
 
             this._updatePanel();
