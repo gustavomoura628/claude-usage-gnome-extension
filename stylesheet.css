@@ -165,3 +165,67 @@
 .claude-dropdown-menu .popup-menu-item:focus {
     background-color: #333333;
 }
+
+/* Status dot in panel */
+.claude-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    margin-left: 6px;
+}
+
+.claude-dot-operational {
+    background-color: #76AD2A;
+}
+
+.claude-dot-degraded {
+    background-color: #2C84DB;
+}
+
+.claude-dot-minor {
+    background-color: #FAA72A;
+}
+
+.claude-dot-major {
+    background-color: #E86235;
+}
+
+.claude-dot-critical {
+    background-color: #E04343;
+}
+
+/* Dropdown service status section */
+.claude-dropdown-component-row {
+    spacing: 8px;
+    padding-left: 8px;
+}
+
+.claude-dropdown-component-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+}
+
+.claude-dropdown-component-name {
+    font-size: 12px;
+    color: #cccccc;
+}
+
+.claude-dropdown-component-status {
+    font-size: 12px;
+    color: #888888;
+}
+
+.claude-dropdown-incident {
+    font-size: 12px;
+    color: #FAA72A;
+    padding-left: 8px;
+    padding-top: 4px;
+}
+
+.claude-dropdown-status-link {
+    font-size: 12px;
+    color: #2C84DB;
+    padding-left: 8px;
+    padding-top: 4px;
+}

@@ -61,6 +61,38 @@ function cancelMessage(message) {
     }
 }
 
+/**
+ * Fetches service status from the Claude status page API.
+ * callback(error, data) — error is null on success.
+ *
+ * Returns the Soup.Message so callers can cancel via session.cancel_message().
+ */
+function fetchStatus(callback) {
+    const session = _getSession();
+    const message = Soup.Message.new('GET', 'https://status.claude.com/api/v2/summary.json');
+
+    session.queue_message(message, function (_session, msg) {
+        if (msg.status_code !== 200) {
+            if (msg.status_code === 0 || msg.status_code === 2) {
+                callback('cancelled', null);
+            } else {
+                callback('http-' + msg.status_code, null);
+            }
+            return;
+        }
+
+        try {
+            const body = msg.response_body.data;
+            const data = JSON.parse(body);
+            callback(null, data);
+        } catch (e) {
+            callback('parse-error', null);
+        }
+    });
+
+    return message;
+}
+
 function destroySession() {
     if (_session) {
         _session.abort();

@@ -1,6 +1,6 @@
 'use strict';
 
-const { Clutter, GLib, GObject, St } = imports.gi;
+const { Clutter, Gio, GLib, GObject, St } = imports.gi;
 const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
 const Main = imports.ui.main;
@@ -12,6 +12,7 @@ const CredentialReader = Me.imports.credentialReader;
 const UsageLogger = Me.imports.usageLogger;
 
 const REFRESH_INTERVAL_S = 45;
+const STATUS_REFRESH_INTERVAL_S = 120;
 const FIVE_HOUR_S = 5 * 3600;
 const SEVEN_DAY_S = 7 * 24 * 3600;
 const PANEL_BAR_WIDTH = 126;
@@ -199,6 +200,10 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._countdownTimerId = null;
         this._pendingMessage = null;
 
+        this._lastStatusData = null;
+        this._pendingStatusMessage = null;
+        this._statusTimerId = null;
+
         this._buildPanelWidget();
         this._buildDropdownMenu();
 
@@ -232,6 +237,15 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         // Update panel countdown labels every 60s
         this._panelTimerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 60, () => {
             this._updatePanel();
+            return GLib.SOURCE_CONTINUE;
+        });
+
+        // Initial status fetch
+        this._refreshStatus();
+
+        // Periodic status refresh (120s)
+        this._statusTimerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, STATUS_REFRESH_INTERVAL_S, () => {
+            this._refreshStatus();
             return GLib.SOURCE_CONTINUE;
         });
     }
@@ -286,6 +300,13 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             y_align: Clutter.ActorAlign.CENTER,
         });
         box.add_child(this._panelPct7d);
+
+        // Status dot
+        this._statusDot = new St.Widget({
+            style_class: 'claude-status-dot claude-dot-operational',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        box.add_child(this._statusDot);
 
         this.add_child(box);
     }
@@ -381,6 +402,63 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._ddModelSection.add_child(this._ddCoworkRow);
 
         dropBox.add_child(this._ddModelSection);
+
+        // --- Service Status section ---
+        dropBox.add_child(new St.Label({
+            style_class: 'claude-dropdown-section-label',
+            text: 'Service Status',
+        }));
+
+        this._ddStatusSection = new St.BoxLayout({ vertical: true });
+
+        // Component rows: claude.ai, API, Claude Code
+        this._ddComponentRows = [];
+        const componentNames = ['claude.ai', 'Claude API (api.anthropic.com)', 'Claude Code'];
+        const componentLabels = ['claude.ai', 'API', 'Claude Code'];
+        for (let i = 0; i < componentNames.length; i++) {
+            const row = new St.BoxLayout({ style_class: 'claude-dropdown-component-row' });
+            const dot = new St.Widget({
+                style_class: 'claude-dropdown-component-dot claude-dot-operational',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            const name = new St.Label({
+                style_class: 'claude-dropdown-component-name',
+                text: componentLabels[i],
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            const status = new St.Label({
+                style_class: 'claude-dropdown-component-status',
+                text: 'Operational',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(dot);
+            row.add_child(name);
+            row.add_child(status);
+            this._ddStatusSection.add_child(row);
+            this._ddComponentRows.push({ apiName: componentNames[i], dot, status });
+        }
+
+        this._ddIncidentLabel = new St.Label({
+            style_class: 'claude-dropdown-incident',
+            text: '',
+            visible: false,
+        });
+        this._ddStatusSection.add_child(this._ddIncidentLabel);
+
+        const statusLink = new St.Label({
+            style_class: 'claude-dropdown-status-link',
+            text: 'status.claude.com',
+            reactive: true,
+            track_hover: true,
+        });
+        statusLink.connect('button-press-event', () => {
+            Gio.AppInfo.launch_default_for_uri('https://status.claude.com', null);
+            this.menu.close();
+            return Clutter.EVENT_STOP;
+        });
+        this._ddStatusSection.add_child(statusLink);
+
+        dropBox.add_child(this._ddStatusSection);
 
         // --- Error line ---
         this._ddError = new St.Label({
@@ -553,10 +631,76 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
 
         this._ddModelSection.visible = anyModel;
 
+        // Service status
+        this._updateStatusDropdown();
+
         // Status
         if (this._lastFetchTime > 0) {
             const ago = Math.round((Date.now() - this._lastFetchTime) / 1000);
             this._ddStatus.set_text('Last updated: ' + ago + 's ago');
+        }
+    }
+
+    _refreshStatus() {
+        if (this._pendingStatusMessage) {
+            ApiClient.cancelMessage(this._pendingStatusMessage);
+            this._pendingStatusMessage = null;
+        }
+
+        this._pendingStatusMessage = ApiClient.fetchStatus((error, data) => {
+            this._pendingStatusMessage = null;
+            if (error === 'cancelled') return;
+
+            if (!error && data) {
+                this._lastStatusData = data;
+                this._updateStatusDot();
+                if (this.menu.isOpen) {
+                    this._updateStatusDropdown();
+                }
+            }
+        });
+    }
+
+    _updateStatusDot() {
+        if (!this._lastStatusData || !this._lastStatusData.status) return;
+
+        const indicator = this._lastStatusData.status.indicator;
+        let dotClass = 'claude-dot-operational';
+        if (indicator === 'critical') dotClass = 'claude-dot-critical';
+        else if (indicator === 'major') dotClass = 'claude-dot-major';
+        else if (indicator === 'minor') dotClass = 'claude-dot-minor';
+        else if (indicator === 'maintenance') dotClass = 'claude-dot-degraded';
+
+        this._statusDot.style_class = 'claude-status-dot ' + dotClass;
+    }
+
+    _updateStatusDropdown() {
+        if (!this._lastStatusData) return;
+
+        const components = this._lastStatusData.components || [];
+        for (const row of this._ddComponentRows) {
+            const comp = components.find(c => c.name === row.apiName);
+            if (comp) {
+                const statusText = comp.status.replace(/_/g, ' ');
+                row.status.set_text(statusText.charAt(0).toUpperCase() + statusText.slice(1));
+
+                let dotClass = 'claude-dot-operational';
+                if (comp.status === 'major_outage') dotClass = 'claude-dot-critical';
+                else if (comp.status === 'partial_outage') dotClass = 'claude-dot-minor';
+                else if (comp.status === 'degraded_performance') dotClass = 'claude-dot-degraded';
+                else if (comp.status === 'under_maintenance') dotClass = 'claude-dot-degraded';
+
+                row.dot.style_class = 'claude-dropdown-component-dot ' + dotClass;
+            }
+        }
+
+        const incidents = this._lastStatusData.incidents || [];
+        if (incidents.length > 0) {
+            const texts = incidents.map(inc => inc.name + ' (' + inc.status + ')');
+            this._ddIncidentLabel.set_text(texts.join('\n'));
+            this._ddIncidentLabel.visible = true;
+        } else {
+            this._ddIncidentLabel.visible = false;
         }
     }
 
@@ -584,11 +728,19 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             GLib.source_remove(this._panelTimerId);
             this._panelTimerId = null;
         }
+        if (this._statusTimerId) {
+            GLib.source_remove(this._statusTimerId);
+            this._statusTimerId = null;
+        }
         this._stopCountdown();
 
         if (this._pendingMessage) {
             ApiClient.cancelMessage(this._pendingMessage);
             this._pendingMessage = null;
+        }
+        if (this._pendingStatusMessage) {
+            ApiClient.cancelMessage(this._pendingStatusMessage);
+            this._pendingStatusMessage = null;
         }
 
         super.destroy();
