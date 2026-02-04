@@ -11,6 +11,8 @@ A GNOME Shell 42 extension that displays your Claude AI usage in the Ubuntu top 
 - Time-position markers on each bar showing how far through the current window you are
 - Color coding: blue (<50%), amber (50–80%), red (>80%)
 - Click to expand a dropdown with detailed countdowns, per-model breakdown, and a refresh button
+- **Service status dot** — colored indicator showing the current status of Claude services (polls [status.claude.com](https://status.claude.com) every 2 minutes)
+- Dropdown shows per-component status (claude.ai, API, Claude Code) and active incidents with a link to the status page
 
 ## Requirements
 
@@ -40,7 +42,7 @@ Fields: timestamp, subscription plan, rate limit tier, 5-hour and 7-day utilizat
 
 ## How it works
 
-The extension reads your OAuth token from `~/.claude/.credentials.json` and polls `https://api.anthropic.com/api/oauth/usage` every 45 seconds. No browser cookies needed.
+The extension reads your OAuth token from `~/.claude/.credentials.json` and polls `https://api.anthropic.com/api/oauth/usage` every 45 seconds. Service status is fetched from `https://status.claude.com/api/v2/summary.json` every 2 minutes (no auth needed). No browser cookies needed.
 
 ## Files
 
