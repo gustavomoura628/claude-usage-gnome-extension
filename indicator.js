@@ -10,6 +10,7 @@ const Me = ExtensionUtils.getCurrentExtension();
 const ApiClient = Me.imports.apiClient;
 const CredentialReader = Me.imports.credentialReader;
 const UsageLogger = Me.imports.usageLogger;
+const HistoryReader = Me.imports.historyReader;
 
 const REFRESH_INTERVAL_S = 45;
 const STATUS_REFRESH_INTERVAL_S = 120;
@@ -19,6 +20,9 @@ const PANEL_BAR_WIDTH = 126;
 const PANEL_BAR_HEIGHT = 12;
 const DROPDOWN_BAR_WIDTH = 200;
 const DROPDOWN_BAR_HEIGHT = 12;
+const GRAPH_WIDTH = 280;
+const GRAPH_HEIGHT = 80;
+const GRAPH_MAX_POINTS = 200;
 
 function _getBarColorClass(pct, prefix) {
     if (pct >= 80) return prefix + '-red';
@@ -186,6 +190,210 @@ function _updateDropdownBar(bar, pct, markerFraction) {
     }
 }
 
+// --- History graph helpers ---
+
+function _createHistoryGraph() {
+    const area = new St.DrawingArea({
+        style_class: 'claude-history-graph',
+        width: GRAPH_WIDTH,
+        height: GRAPH_HEIGHT,
+    });
+
+    area._points = [];
+    area._xLabels = [];
+    area._noData = false;
+    area._maxVal = 1;
+    area._windowStart = 0;
+    area._windowEnd = 1;
+
+    area.connect('repaint', (a) => {
+        const cr = a.get_context();
+        const [w, h] = a.get_surface_size();
+        const pad = { left: 36, right: 8, top: 8, bottom: 16 };
+        const gw = w - pad.left - pad.right;
+        const gh = h - pad.top - pad.bottom;
+        const maxVal = a._maxVal || 1;
+
+        // Dark rounded background
+        _roundedRect(cr, 0, 0, w, h, 6);
+        cr.setSourceRGBA(0.165, 0.165, 0.165, 1); // #2a2a2a
+        cr.fill();
+
+        // Gridlines at 25%, 50%, 75%, 100%
+        cr.setSourceRGBA(1, 1, 1, 0.08);
+        for (const frac of [0.25, 0.5, 0.75, 1.0]) {
+            const gy = pad.top + gh * (1 - frac);
+            cr.moveTo(pad.left, gy);
+            cr.lineTo(pad.left + gw, gy);
+            cr.stroke();
+        }
+
+        // Y-axis labels
+        cr.setSourceRGBA(1, 1, 1, 0.35);
+        cr.selectFontFace('Sans', 0, 0);
+        cr.setFontSize(9);
+        const halfLabel = HistoryReader.formatCredits(maxVal * 0.5);
+        const fullLabel = HistoryReader.formatCredits(maxVal);
+        for (const [frac, label] of [[0.5, halfLabel], [1.0, fullLabel]]) {
+            const gy = pad.top + gh * (1 - frac);
+            cr.moveTo(2, gy + 3);
+            cr.showText(label);
+        }
+
+        // X-axis labels and tick marks — positioned by actual time
+        const xLbls = a._xLabels || [];
+        for (let i = 0; i < xLbls.length; i++) {
+            const item = xLbls[i];
+            const lx = pad.left + item.frac * gw;
+
+            // Vertical tick mark
+            cr.setSourceRGBA(1, 1, 1, 0.12);
+            cr.setLineWidth(1);
+            cr.moveTo(lx, pad.top);
+            cr.lineTo(lx, pad.top + gh);
+            cr.stroke();
+
+            // Label text — centered on tick, clamped to graph bounds
+            cr.setSourceRGBA(1, 1, 1, 0.35);
+            cr.setFontSize(9);
+            const ext = cr.textExtents(item.label);
+            let tx = lx - ext.width / 2;
+            tx = Math.max(pad.left, Math.min(pad.left + gw - ext.width, tx));
+            cr.moveTo(tx, h - 2);
+            cr.showText(item.label);
+        }
+
+        const pts = a._points;
+        if (a._noData || pts.length === 0) {
+            // "No data" centered text
+            cr.setSourceRGBA(1, 1, 1, 0.3);
+            cr.setFontSize(12);
+            const txt = 'No data';
+            const ext = cr.textExtents(txt);
+            cr.moveTo(w / 2 - ext.width / 2, h / 2 + ext.height / 2);
+            cr.showText(txt);
+            cr.$dispose();
+            return;
+        }
+
+        // Draw bars — positioned by time
+        const wStart = a._windowStart || 0;
+        const wEnd = a._windowEnd || 1;
+        const wSpan = wEnd - wStart || 1;
+        const barGap = 1;
+        const baseline = pad.top + gh;
+
+        for (let i = 0; i < pts.length; i++) {
+            const v = Math.min(maxVal, Math.max(0, pts[i].v));
+            const barH = (v / maxVal) * gh;
+            const dur = pts[i].dur || (wSpan / pts.length);
+            const frac = (pts[i].t - wStart) / wSpan;
+            const fracW = dur / wSpan;
+            const bx = pad.left + frac * gw + barGap / 2;
+            const bw = Math.max(1, fracW * gw - barGap);
+
+            // Bar fill
+            cr.rectangle(bx, baseline - barH, bw, barH);
+            cr.setSourceRGBA(0.21, 0.52, 0.89, 0.6);
+            cr.fill();
+
+            // Bar top edge
+            if (barH > 0) {
+                cr.rectangle(bx, baseline - barH, bw, 1);
+                cr.setSourceRGBA(0.21, 0.52, 0.89, 0.9);
+                cr.fill();
+            }
+        }
+
+        cr.$dispose();
+    });
+
+    return area;
+}
+
+function _formatHour(d) {
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const suffix = h >= 12 ? 'pm' : 'am';
+    const h12 = h % 12 || 12;
+    return m === 0 ? h12 + suffix : h12 + ':' + String(m).padStart(2, '0') + suffix;
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function _computeXLabels24h(wStart, wEnd) {
+    const span = wEnd - wStart || 1;
+    const labels = [];
+    const HOUR_LABELS = ['12am', '4am', '8am', '12pm', '4pm', '8pm'];
+    const HOUR_VALUES = [0, 4, 8, 12, 16, 20];
+
+    const d = new Date(wStart);
+    d.setMinutes(0, 0, 0);
+    const rem = d.getHours() % 4;
+    if (rem !== 0) d.setHours(d.getHours() + (4 - rem));
+
+    while (d.getTime() <= wEnd) {
+        const frac = (d.getTime() - wStart) / span;
+        if (frac >= 0 && frac <= 1) {
+            const idx = HOUR_VALUES.indexOf(d.getHours());
+            if (idx !== -1) {
+                labels.push({ label: HOUR_LABELS[idx], frac });
+            }
+        }
+        d.setHours(d.getHours() + 4);
+    }
+    return labels;
+}
+
+function _computeXLabels7d(wStart, wEnd) {
+    const span = wEnd - wStart || 1;
+    const labels = [];
+
+    const d = new Date(wStart);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 1);
+
+    while (d.getTime() <= wEnd) {
+        const frac = (d.getTime() - wStart) / span;
+        if (frac >= 0 && frac <= 1) {
+            labels.push({ label: DAY_NAMES[d.getDay()], frac });
+        }
+        d.setDate(d.getDate() + 1);
+    }
+    return labels;
+}
+
+function _updateHistoryGraph(area, statsLabel, windowMs, field, labelFn, maxPoints, bucketMs, rateBucketMs, rateUnit) {
+    const result = HistoryReader.readHistory(windowMs, field, maxPoints || GRAPH_MAX_POINTS, bucketMs || 0, rateBucketMs);
+
+    if (!result.ok || result.points.length === 0) {
+        area._points = [];
+        area._noData = true;
+        area._maxVal = 1;
+        area._xLabels = labelFn(Date.now() - windowMs, Date.now());
+        statsLabel.set_text('No data');
+    } else {
+        area._points = result.points;
+        area._noData = false;
+        area._windowStart = result.windowStart;
+        area._windowEnd = result.windowEnd;
+        area._xLabels = labelFn(result.windowStart, result.windowEnd);
+        let pointMax = 0;
+        for (let i = 0; i < result.points.length; i++) {
+            if (result.points[i].v > pointMax) pointMax = result.points[i].v;
+        }
+        area._maxVal = pointMax > 0 ? pointMax * 1.15 : 1;
+        const fmt = HistoryReader.formatCredits;
+        statsLabel.set_text(
+            'avg ' + fmt(result.avgRate) + '/' + rateUnit +
+            '  |  peak ' + fmt(result.peakRate) + '/' + rateUnit +
+            '  |  total ' + fmt(result.total)
+        );
+    }
+
+    area.queue_repaint();
+}
+
 // ---- Main indicator class ----
 
 var ClaudeUsageIndicator = GObject.registerClass(
@@ -218,6 +426,7 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             if (isOpen) {
                 this._startCountdown();
                 this._updateDropdown();
+                this._loadHistoryGraphs();
             } else {
                 this._stopCountdown();
             }
@@ -402,6 +611,38 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._ddModelSection.add_child(this._ddCoworkRow);
 
         dropBox.add_child(this._ddModelSection);
+
+        // --- Usage History section ---
+        dropBox.add_child(new St.Label({
+            style_class: 'claude-dropdown-section-label',
+            text: 'Usage History',
+        }));
+
+        // 5h graph
+        dropBox.add_child(new St.Label({
+            style_class: 'claude-history-graph-label',
+            text: '5h Credit Rate (24h)',
+        }));
+        this._graph5h = _createHistoryGraph();
+        dropBox.add_child(this._graph5h);
+        this._graphStats5h = new St.Label({
+            style_class: 'claude-history-stats',
+            text: '',
+        });
+        dropBox.add_child(this._graphStats5h);
+
+        // 7d graph
+        dropBox.add_child(new St.Label({
+            style_class: 'claude-history-graph-label',
+            text: '7d Credit Rate (7d)',
+        }));
+        this._graph7d = _createHistoryGraph();
+        dropBox.add_child(this._graph7d);
+        this._graphStats7d = new St.Label({
+            style_class: 'claude-history-stats',
+            text: '',
+        });
+        dropBox.add_child(this._graphStats7d);
 
         // --- Service Status section ---
         dropBox.add_child(new St.Label({
@@ -717,6 +958,14 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             GLib.source_remove(this._countdownTimerId);
             this._countdownTimerId = null;
         }
+    }
+
+    _loadHistoryGraphs() {
+        const MIN_MS = 60 * 1000;
+        const HOUR_MS = 3600 * 1000;
+        const DAY_MS = 24 * HOUR_MS;
+        _updateHistoryGraph(this._graph5h, this._graphStats5h, 24 * HOUR_MS, '5h', _computeXLabels24h, 0, 30 * MIN_MS, HOUR_MS, 'hr');
+        _updateHistoryGraph(this._graph7d, this._graphStats7d, 7 * DAY_MS, '7d', _computeXLabels7d, 0, DAY_MS, DAY_MS, 'day');
     }
 
     destroy() {

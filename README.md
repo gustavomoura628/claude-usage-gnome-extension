@@ -2,7 +2,13 @@
 
 A GNOME Shell 42 extension that displays your Claude AI usage in the Ubuntu top bar.
 
-![Top bar widget showing 5h and 7d usage bars](screenshot.png)
+Top bar with 5h/7d usage bars, countdowns, and status dot:
+
+![Top bar widget showing 5h and 7d usage bars](bar.png)
+
+Click to open the dropdown with usage details, credit history graphs, and service status:
+
+![Dropdown with usage details, history graphs, and service status](dropdown.png)
 
 ## What it shows
 
@@ -11,6 +17,13 @@ A GNOME Shell 42 extension that displays your Claude AI usage in the Ubuntu top 
 - Time-position markers on each bar showing how far through the current window you are
 - Color coding: blue (<50%), amber (50–80%), red (>80%)
 - Click to expand a dropdown with detailed countdowns, per-model breakdown, and a refresh button
+- **Usage history graphs** — two bar charts showing instantaneous credit consumption over time, loaded when the dropdown opens:
+  - **5h Credit Rate (24h)**: 30-minute bars aligned to clock half-hours, with tick marks at 4-hour intervals (12am, 4am, 8am, etc.)
+  - **7d Credit Rate (7d)**: daily bars aligned to midnights, with tick marks at each day of the week
+  - Credit values computed from utilization percentages and known per-tier credit limits
+  - Partial buckets (current period) are rate-scaled and shown at proportional width
+  - Summary stats: avg/period, peak/period, and total credits consumed
+  - Downsampling uses LTTB (Largest Triangle Three Buckets) when needed
 - **Service status dot** — colored indicator showing the current status of Claude services (polls [status.claude.com](https://status.claude.com) every 2 minutes)
 - Dropdown shows per-component status (claude.ai, API, Claude Code) and active incidents with a link to the status page
 
@@ -50,10 +63,11 @@ The extension reads your OAuth token from `~/.claude/.credentials.json` and poll
 |------|---------|
 | `metadata.json` | Extension manifest |
 | `extension.js` | Lifecycle: `init()`, `enable()`, `disable()` |
-| `indicator.js` | Panel widget + dropdown menu + Cairo-drawn progress bars |
+| `indicator.js` | Panel widget + dropdown menu + Cairo-drawn progress bars and history graphs |
 | `apiClient.js` | Async HTTP client (Soup 2.4) |
 | `credentialReader.js` | Reads OAuth token and plan info from disk |
 | `usageLogger.js` | Appends usage snapshots to JSONL log file |
+| `historyReader.js` | Reads JSONL history, computes credit deltas, clock-aligned bucketing, LTTB downsampling |
 | `stylesheet.css` | Dropdown and label styling |
 
 ## Uninstall

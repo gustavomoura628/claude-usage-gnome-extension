@@ -229,3 +229,20 @@
     padding-left: 8px;
     padding-top: 4px;
 }
+
+/* History graph styles */
+.claude-history-graph {
+    margin-top: 4px;
+    margin-bottom: 2px;
+}
+
+.claude-history-graph-label {
+    font-size: 11px;
+    color: #888888;
+}
+
+.claude-history-stats {
+    font-size: 11px;
+    color: #888888;
+    padding-bottom: 2px;
+}
