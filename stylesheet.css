@@ -265,13 +265,25 @@
 }
 
 .claude-history-nav-arrow {
-    font-size: 16px;
-    color: #888888;
-    padding: 0 4px;
+    font-size: 14px;
+    color: #aaaaaa;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.06);
 }
 
 .claude-history-nav-arrow:hover {
-    color: #cccccc;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.claude-toggle-active {
+    background-color: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+.claude-toggle-active:hover {
+    background-color: rgba(255, 255, 255, 0.24);
 }
 
 .claude-history-nav-label {

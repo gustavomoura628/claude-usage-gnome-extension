@@ -24,6 +24,9 @@ Click to open the dropdown with usage details, credit history graphs, and servic
   - Partial buckets (current period) are rate-scaled and shown at proportional width
   - Summary stats: avg/period, peak/period, and total credits consumed
   - Downsampling uses LTTB (Largest Triangle Three Buckets) when needed
+  - **1x gridlines** — horizontal gridlines at multiples of the Pro account limit (1x, 2x, 3x, etc.) instead of fixed percentages, so you can see how many accounts' worth each bar represents
+  - **Window boundary lines** — vertical lines marking rate limit window boundaries: red for window resets, blue for window starts, purple where both coincide (consecutive windows with no gap)
+  - **Cumulative mode** — click the `Σ` button in the "Usage History" header to overlay green bars showing accumulated credit usage within each rate limit window, resetting at each boundary. The graph auto-scales between modes.
   - **Navigation arrows** — `◀`/`▶` buttons above each graph let you browse previous days (for the 24h graph) or previous weeks (for the 7d graph). Periods are calendar-aligned: midnight-to-midnight for days, Sunday-to-Saturday for weeks. The default view (offset 0) shows the current rolling window. Navigation resets when the dropdown closes.
 - **Service status dot** — colored indicator showing the current status of Claude services (polls [status.claude.com](https://status.claude.com) every 2 minutes)
 - Dropdown shows per-component status (claude.ai, API, Claude Code) and active incidents with a link to the status page

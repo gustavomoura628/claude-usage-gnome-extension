@@ -207,6 +207,8 @@ function _createHistoryGraph() {
     area._unitCredits = 0;
     area._resetTimes = [];
     area._windowPeriodMs = 0;
+    area._showCumulative = false;
+    area._cumMax = 0;
     area._windowStart = 0;
     area._windowEnd = 1;
 
@@ -216,7 +218,9 @@ function _createHistoryGraph() {
         const pad = { left: 36, right: 8, top: 8, bottom: 16 };
         const gw = w - pad.left - pad.right;
         const gh = h - pad.top - pad.bottom;
-        const maxVal = a._maxVal || 1;
+        const maxVal = a._showCumulative
+            ? Math.max(a._maxVal || 1, a._cumMax || 0)
+            : (a._maxVal || 1);
 
         // Dark rounded background
         _roundedRect(cr, 0, 0, w, h, 6);
@@ -305,6 +309,25 @@ function _createHistoryGraph() {
         const wSpan = wEnd - wStart || 1;
         const barGap = 1;
         const baseline = pad.top + gh;
+
+        // Green cumulative bars (behind blue bars)
+        if (a._showCumulative && a._resetTimes.length > 0) {
+            const rTimes2 = a._resetTimes;
+            let cumS = 0, rI = 0;
+            for (let i = 0; i < pts.length; i++) {
+                while (rI < rTimes2.length && rTimes2[rI] <= pts[i].t) { cumS = 0; rI++; }
+                cumS += Math.max(0, pts[i].v);
+                const cumH = Math.min(cumS, maxVal) / maxVal * gh;
+                const dur = pts[i].dur || (wSpan / pts.length);
+                const frac = (pts[i].t - wStart) / wSpan;
+                const fracW = dur / wSpan;
+                const bx = pad.left + frac * gw + barGap / 2;
+                const bw = Math.max(1, fracW * gw - barGap);
+                cr.rectangle(bx, baseline - cumH, bw, cumH);
+                cr.setSourceRGBA(0.2, 0.7, 0.3, 1);
+                cr.fill();
+            }
+        }
 
         for (let i = 0; i < pts.length; i++) {
             const v = Math.min(maxVal, Math.max(0, pts[i].v));
@@ -438,8 +461,16 @@ function _updateHistoryGraph(area, statsLabel, windowMs, field, labelFn, maxPoin
         area._unitCredits = PRO_1X_LIMITS[field] || 0;
         area._resetTimes = result.resetTimes || [];
         area._windowPeriodMs = { '5h': 5*3600*1000, '7d': 7*24*3600*1000 }[field] || 0;
+        let cumSum = 0, cumMax = 0, rIdx = 0;
+        const rts = area._resetTimes;
+        for (let i = 0; i < result.points.length; i++) {
+            while (rIdx < rts.length && rts[rIdx] <= result.points[i].t) { cumSum = 0; rIdx++; }
+            cumSum += result.points[i].v;
+            if (cumSum > cumMax) cumMax = cumSum;
+        }
         const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
         area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
+        area._cumMax = cumMax > 0 ? cumMax * 1.15 : 0;
         const fmt = HistoryReader.formatCredits;
         statsLabel.set_text(
             'avg ' + fmt(result.avgRate) + '/' + rateUnit +
@@ -514,8 +545,16 @@ function _updateHistoryGraphRange(area, statsLabel, startMs, endMs, field, label
         area._unitCredits = PRO_1X_LIMITS[field] || 0;
         area._resetTimes = result.resetTimes || [];
         area._windowPeriodMs = { '5h': 5*3600*1000, '7d': 7*24*3600*1000 }[field] || 0;
+        let cumSum = 0, cumMax = 0, rIdx = 0;
+        const rts = area._resetTimes;
+        for (let i = 0; i < result.points.length; i++) {
+            while (rIdx < rts.length && rts[rIdx] <= result.points[i].t) { cumSum = 0; rIdx++; }
+            cumSum += result.points[i].v;
+            if (cumSum > cumMax) cumMax = cumSum;
+        }
         const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
         area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
+        area._cumMax = cumMax > 0 ? cumMax * 1.15 : 0;
         const fmt = HistoryReader.formatCredits;
         statsLabel.set_text(
             'avg ' + fmt(result.avgRate) + '/' + rateUnit +
@@ -550,6 +589,7 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         // Navigation offsets for history graphs (0 = rolling window, 1+ = calendar-aligned past periods)
         this._graph5hOffset = 0;
         this._graph7dOffset = 0;
+        this._showCumulative = false;
 
         this._buildPanelWidget();
         this._buildDropdownMenu();
@@ -754,10 +794,32 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         dropBox.add_child(this._ddModelSection);
 
         // --- Usage History section ---
-        dropBox.add_child(new St.Label({
+        const historyHeaderRow = new St.BoxLayout({ x_expand: true });
+        historyHeaderRow.add_child(new St.Label({
             style_class: 'claude-dropdown-section-label',
             text: 'Usage History',
+            x_expand: true,
         }));
+        this._cumToggle = new St.Label({
+            style_class: 'claude-history-nav-arrow',
+            text: '\u03A3',
+            reactive: true,
+            track_hover: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._cumToggle.connect('button-press-event', () => {
+            this._showCumulative = !this._showCumulative;
+            this._cumToggle.style_class = this._showCumulative
+                ? 'claude-history-nav-arrow claude-toggle-active'
+                : 'claude-history-nav-arrow';
+            this._graph5h._showCumulative = this._showCumulative;
+            this._graph7d._showCumulative = this._showCumulative;
+            this._graph5h.queue_repaint();
+            this._graph7d.queue_repaint();
+            return Clutter.EVENT_STOP;
+        });
+        historyHeaderRow.add_child(this._cumToggle);
+        dropBox.add_child(historyHeaderRow);
 
         // 5h graph — title + nav on same row
         const navRow5h = new St.BoxLayout({
