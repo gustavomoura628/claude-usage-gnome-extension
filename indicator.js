@@ -317,7 +317,7 @@ function _createHistoryGraph() {
 
             // Bar fill
             cr.rectangle(bx, baseline - barH, bw, barH);
-            cr.setSourceRGBA(0.21, 0.52, 0.89, 0.6);
+            cr.setSourceRGBA(0.21, 0.52, 0.89, 1);
             cr.fill();
 
             // Bar top edge
