@@ -273,13 +273,6 @@ function _createHistoryGraph() {
             const item = xLbls[i];
             const lx = pad.left + item.frac * gw;
 
-            // Vertical tick mark
-            cr.setSourceRGBA(1, 1, 1, 0.12);
-            cr.setLineWidth(1);
-            cr.moveTo(lx, pad.top);
-            cr.lineTo(lx, pad.top + gh);
-            cr.stroke();
-
             // Label text — centered on tick, clamped to graph bounds
             cr.setSourceRGBA(1, 1, 1, 0.35);
             cr.setFontSize(9);
@@ -310,22 +303,56 @@ function _createHistoryGraph() {
         const barGap = 1;
         const baseline = pad.top + gh;
 
-        // Green cumulative bars (behind blue bars)
+        // Green cumulative bars (behind blue bars), split at mid-bar resets
+        const cumSegs = []; // stored for dotted-line pass: {bx, bw, cumH, barIdx}
         if (a._showCumulative) {
             const rTimes2 = a._resetTimes;
             let cumS = 0, rI = 0;
+            cr.setSourceRGBA(0.2, 0.7, 0.3, 1);
             for (let i = 0; i < pts.length; i++) {
                 while (rI < rTimes2.length && rTimes2[rI] <= pts[i].t) { cumS = 0; rI++; }
-                cumS += Math.max(0, pts[i].v);
-                const cumH = Math.min(cumS, maxVal) / maxVal * gh;
+                const barVal = Math.max(0, pts[i].v);
                 const dur = pts[i].dur || (wSpan / pts.length);
-                const frac = (pts[i].t - wStart) / wSpan;
-                const fracW = dur / wSpan;
-                const bx = pad.left + frac * gw + barGap / 2;
-                const bw = Math.max(1, fracW * gw - barGap);
-                cr.rectangle(bx, baseline - cumH, bw, cumH);
-                cr.setSourceRGBA(0.2, 0.7, 0.3, 1);
-                cr.fill();
+                const barStart = pts[i].t;
+                const barEnd = barStart + dur;
+                // Full bar pixel bounds
+                const fullFrac = (barStart - wStart) / wSpan;
+                const fullFracW = dur / wSpan;
+                const fullBx = pad.left + fullFrac * gw + barGap / 2;
+                const fullBw = Math.max(1, fullFracW * gw - barGap);
+                // Find resets within this bar
+                const midResets = [];
+                for (let ri = rI; ri < rTimes2.length && rTimes2[ri] < barEnd; ri++) {
+                    if (rTimes2[ri] > barStart) midResets.push(rTimes2[ri]);
+                }
+                if (midResets.length === 0) {
+                    cumS += barVal;
+                    const cumH = Math.min(cumS, maxVal) / maxVal * gh;
+                    cr.rectangle(fullBx, baseline - cumH, fullBw, cumH);
+                    cr.fill();
+                    cumSegs.push({ bx: fullBx, bw: fullBw, cumH, barIdx: i });
+                } else {
+                    // Split bar into segments at each reset
+                    let segStart = barStart;
+                    for (let r = 0; r <= midResets.length; r++) {
+                        const segEnd = r < midResets.length ? midResets[r] : barEnd;
+                        const segFrac = (segEnd - segStart) / dur;
+                        const segCredits = barVal * segFrac;
+                        cumS += segCredits;
+                        const cumH = Math.min(cumS, maxVal) / maxVal * gh;
+                        const relStart = (segStart - barStart) / dur;
+                        const relEnd = (segEnd - barStart) / dur;
+                        const sbx = fullBx + relStart * fullBw;
+                        const sbw = Math.max(1, (relEnd - relStart) * fullBw);
+                        if (cumH > 0.5) {
+                            cr.rectangle(sbx, baseline - cumH, sbw, cumH);
+                            cr.fill();
+                        }
+                        cumSegs.push({ bx: sbx, bw: sbw, cumH, barIdx: i });
+                        if (r < midResets.length) { cumS = 0; rI++; }
+                        segStart = segEnd;
+                    }
+                }
             }
         }
 
@@ -382,32 +409,22 @@ function _createHistoryGraph() {
         }
 
         // Dotted green line at cumulative top where green is obscured by blue
-        if (a._showCumulative) {
-            const rTimes3 = a._resetTimes;
-            let cumS2 = 0, rI2 = 0;
+        if (cumSegs.length > 0) {
             let hasDash = false;
-            for (let i = 0; i < pts.length; i++) {
-                while (rI2 < rTimes3.length && rTimes3[rI2] <= pts[i].t) { cumS2 = 0; rI2++; }
-                cumS2 += Math.max(0, pts[i].v);
-                const cumH = Math.min(cumS2, maxVal) / maxVal * gh;
-                const barV = Math.min(maxVal, Math.max(0, pts[i].v));
+            for (let s = 0; s < cumSegs.length; s++) {
+                const seg = cumSegs[s];
+                const barV = Math.min(maxVal, Math.max(0, pts[seg.barIdx].v));
                 const barH = (barV / maxVal) * gh;
-                // Only draw when green is obscured by blue and cumulative > 0
-                if (cumH > 0.5 && cumH <= barH + 1) {
+                if (seg.cumH > 3 && seg.cumH <= barH + 1) {
                     if (!hasDash) {
                         cr.setSourceRGBA(0.2, 0.7, 0.3, 0.9);
                         cr.setLineWidth(1.5);
                         cr.setDash([3, 3], 0);
                         hasDash = true;
                     }
-                    const dur = pts[i].dur || (wSpan / pts.length);
-                    const frac = (pts[i].t - wStart) / wSpan;
-                    const fracW = dur / wSpan;
-                    const bx = pad.left + frac * gw + barGap / 2;
-                    const bw = Math.max(1, fracW * gw - barGap);
-                    const ly = baseline - cumH;
-                    cr.moveTo(bx, ly);
-                    cr.lineTo(bx + bw, ly);
+                    const ly = baseline - seg.cumH;
+                    cr.moveTo(seg.bx, ly);
+                    cr.lineTo(seg.bx + seg.bw, ly);
                     cr.stroke();
                 }
             }
@@ -496,10 +513,29 @@ function _updateHistoryGraph(area, statsLabel, windowMs, field, labelFn, maxPoin
         area._windowPeriodMs = { '5h': 5*3600*1000, '7d': 7*24*3600*1000 }[field] || 0;
         let cumSum = 0, cumMax = 0, rIdx = 0;
         const rts = area._resetTimes;
-        for (let i = 0; i < result.points.length; i++) {
-            while (rIdx < rts.length && rts[rIdx] <= result.points[i].t) { cumSum = 0; rIdx++; }
-            cumSum += result.points[i].v;
-            if (cumSum > cumMax) cumMax = cumSum;
+        const pts = result.points;
+        for (let i = 0; i < pts.length; i++) {
+            while (rIdx < rts.length && rts[rIdx] <= pts[i].t) { cumSum = 0; rIdx++; }
+            const dur = pts[i].dur || 1;
+            const barEnd = pts[i].t + dur;
+            // Check for mid-bar resets and split proportionally
+            const midR = [];
+            for (let ri = rIdx; ri < rts.length && rts[ri] < barEnd; ri++) {
+                if (rts[ri] > pts[i].t) midR.push(rts[ri]);
+            }
+            if (midR.length === 0) {
+                cumSum += pts[i].v;
+                if (cumSum > cumMax) cumMax = cumSum;
+            } else {
+                let segStart = pts[i].t;
+                for (let r = 0; r <= midR.length; r++) {
+                    const segEnd = r < midR.length ? midR[r] : barEnd;
+                    cumSum += pts[i].v * ((segEnd - segStart) / dur);
+                    if (cumSum > cumMax) cumMax = cumSum;
+                    if (r < midR.length) { cumSum = 0; rIdx++; }
+                    segStart = segEnd;
+                }
+            }
         }
         const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
         area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
@@ -580,10 +616,28 @@ function _updateHistoryGraphRange(area, statsLabel, startMs, endMs, field, label
         area._windowPeriodMs = { '5h': 5*3600*1000, '7d': 7*24*3600*1000 }[field] || 0;
         let cumSum = 0, cumMax = 0, rIdx = 0;
         const rts = area._resetTimes;
-        for (let i = 0; i < result.points.length; i++) {
-            while (rIdx < rts.length && rts[rIdx] <= result.points[i].t) { cumSum = 0; rIdx++; }
-            cumSum += result.points[i].v;
-            if (cumSum > cumMax) cumMax = cumSum;
+        const pts = result.points;
+        for (let i = 0; i < pts.length; i++) {
+            while (rIdx < rts.length && rts[rIdx] <= pts[i].t) { cumSum = 0; rIdx++; }
+            const dur = pts[i].dur || 1;
+            const barEnd = pts[i].t + dur;
+            const midR = [];
+            for (let ri = rIdx; ri < rts.length && rts[ri] < barEnd; ri++) {
+                if (rts[ri] > pts[i].t) midR.push(rts[ri]);
+            }
+            if (midR.length === 0) {
+                cumSum += pts[i].v;
+                if (cumSum > cumMax) cumMax = cumSum;
+            } else {
+                let segStart = pts[i].t;
+                for (let r = 0; r <= midR.length; r++) {
+                    const segEnd = r < midR.length ? midR[r] : barEnd;
+                    cumSum += pts[i].v * ((segEnd - segStart) / dur);
+                    if (cumSum > cumMax) cumMax = cumSum;
+                    if (r < midR.length) { cumSum = 0; rIdx++; }
+                    segStart = segEnd;
+                }
+            }
         }
         const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
         area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
