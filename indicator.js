@@ -696,18 +696,17 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             text: 'Usage History',
         }));
 
-        // 5h graph
-        dropBox.add_child(new St.Label({
-            style_class: 'claude-history-graph-label',
-            text: '5h Credit Rate (24h)',
-        }));
-
-        // Nav row for 5h graph
+        // 5h graph — title + nav on same row
         const navRow5h = new St.BoxLayout({
             style_class: 'claude-history-nav-row',
-            x_align: Clutter.ActorAlign.END,
             x_expand: true,
         });
+        navRow5h.add_child(new St.Label({
+            style_class: 'claude-history-graph-title',
+            text: 'Credit Rate \u2013 30min Buckets (24h)',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        }));
         this._navLeft5h = new St.Label({
             style_class: 'claude-history-nav-arrow',
             text: '\u25C0',
@@ -752,18 +751,22 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         });
         dropBox.add_child(this._graphStats5h);
 
-        // 7d graph
-        dropBox.add_child(new St.Label({
-            style_class: 'claude-history-graph-label',
-            text: '7d Credit Rate (7d)',
+        // Divider between graphs
+        dropBox.add_child(new St.Widget({
+            style_class: 'claude-history-graph-divider',
         }));
 
-        // Nav row for 7d graph
+        // 7d graph — title + nav on same row
         const navRow7d = new St.BoxLayout({
             style_class: 'claude-history-nav-row',
-            x_align: Clutter.ActorAlign.END,
             x_expand: true,
         });
+        navRow7d.add_child(new St.Label({
+            style_class: 'claude-history-graph-title',
+            text: 'Credit Rate \u2013 Daily Buckets (7d)',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        }));
         this._navLeft7d = new St.Label({
             style_class: 'claude-history-nav-arrow',
             text: '\u25C0',

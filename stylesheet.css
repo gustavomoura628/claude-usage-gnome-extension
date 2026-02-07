@@ -241,6 +241,19 @@
     color: #888888;
 }
 
+.claude-history-graph-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: #aaaaaa;
+}
+
+.claude-history-graph-divider {
+    height: 1px;
+    background-color: #333333;
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+
 .claude-history-stats {
     font-size: 11px;
     color: #888888;
