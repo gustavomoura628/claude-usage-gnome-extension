@@ -23,6 +23,7 @@ const DROPDOWN_BAR_HEIGHT = 12;
 const GRAPH_WIDTH = 280;
 const GRAPH_HEIGHT = 80;
 const GRAPH_MAX_POINTS = 200;
+const PRO_1X_LIMITS = { '5h': 550000, '7d': 5000000 };
 
 function _getBarColorClass(pct, prefix) {
     if (pct >= 80) return prefix + '-red';
@@ -203,6 +204,7 @@ function _createHistoryGraph() {
     area._xLabels = [];
     area._noData = false;
     area._maxVal = 1;
+    area._unitCredits = 0;
     area._windowStart = 0;
     area._windowEnd = 1;
 
@@ -219,25 +221,44 @@ function _createHistoryGraph() {
         cr.setSourceRGBA(0.165, 0.165, 0.165, 1); // #2a2a2a
         cr.fill();
 
-        // Gridlines at 25%, 50%, 75%, 100%
-        cr.setSourceRGBA(1, 1, 1, 0.08);
-        for (const frac of [0.25, 0.5, 0.75, 1.0]) {
-            const gy = pad.top + gh * (1 - frac);
-            cr.moveTo(pad.left, gy);
-            cr.lineTo(pad.left + gw, gy);
-            cr.stroke();
-        }
-
-        // Y-axis labels
-        cr.setSourceRGBA(1, 1, 1, 0.35);
-        cr.selectFontFace('Sans', 0, 0);
-        cr.setFontSize(9);
-        const halfLabel = HistoryReader.formatCredits(maxVal * 0.5);
-        const fullLabel = HistoryReader.formatCredits(maxVal);
-        for (const [frac, label] of [[0.5, halfLabel], [1.0, fullLabel]]) {
-            const gy = pad.top + gh * (1 - frac);
-            cr.moveTo(2, gy + 3);
-            cr.showText(label);
+        // Gridlines and Y-axis labels
+        const unitCr = a._unitCredits;
+        if (unitCr > 0) {
+            // 1x-based gridlines
+            let step = 1;
+            while (unitCr * step * 5 < maxVal) step *= 2;
+            cr.selectFontFace('Sans', 0, 0);
+            cr.setFontSize(9);
+            for (let m = step; m * unitCr <= maxVal; m += step) {
+                const frac = (m * unitCr) / maxVal;
+                const gy = pad.top + gh * (1 - frac);
+                cr.setSourceRGBA(1, 1, 1, 0.08);
+                cr.moveTo(pad.left, gy);
+                cr.lineTo(pad.left + gw, gy);
+                cr.stroke();
+                cr.setSourceRGBA(1, 1, 1, 0.35);
+                cr.moveTo(2, gy + 3);
+                cr.showText(m + 'x');
+            }
+        } else {
+            // Fallback: fixed 25/50/75/100% gridlines
+            cr.setSourceRGBA(1, 1, 1, 0.08);
+            for (const frac of [0.25, 0.5, 0.75, 1.0]) {
+                const gy = pad.top + gh * (1 - frac);
+                cr.moveTo(pad.left, gy);
+                cr.lineTo(pad.left + gw, gy);
+                cr.stroke();
+            }
+            cr.setSourceRGBA(1, 1, 1, 0.35);
+            cr.selectFontFace('Sans', 0, 0);
+            cr.setFontSize(9);
+            const halfLabel = HistoryReader.formatCredits(maxVal * 0.5);
+            const fullLabel = HistoryReader.formatCredits(maxVal);
+            for (const [frac, label] of [[0.5, halfLabel], [1.0, fullLabel]]) {
+                const gy = pad.top + gh * (1 - frac);
+                cr.moveTo(2, gy + 3);
+                cr.showText(label);
+            }
         }
 
         // X-axis labels and tick marks — positioned by actual time
@@ -382,7 +403,9 @@ function _updateHistoryGraph(area, statsLabel, windowMs, field, labelFn, maxPoin
         for (let i = 0; i < result.points.length; i++) {
             if (result.points[i].v > pointMax) pointMax = result.points[i].v;
         }
-        area._maxVal = pointMax > 0 ? pointMax * 1.15 : 1;
+        area._unitCredits = PRO_1X_LIMITS[field] || 0;
+        const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
+        area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
         const fmt = HistoryReader.formatCredits;
         statsLabel.set_text(
             'avg ' + fmt(result.avgRate) + '/' + rateUnit +
@@ -454,7 +477,9 @@ function _updateHistoryGraphRange(area, statsLabel, startMs, endMs, field, label
         for (let i = 0; i < result.points.length; i++) {
             if (result.points[i].v > pointMax) pointMax = result.points[i].v;
         }
-        area._maxVal = pointMax > 0 ? pointMax * 1.15 : 1;
+        area._unitCredits = PRO_1X_LIMITS[field] || 0;
+        const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
+        area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
         const fmt = HistoryReader.formatCredits;
         statsLabel.set_text(
             'avg ' + fmt(result.avgRate) + '/' + rateUnit +
