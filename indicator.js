@@ -311,7 +311,7 @@ function _createHistoryGraph() {
         const baseline = pad.top + gh;
 
         // Green cumulative bars (behind blue bars)
-        if (a._showCumulative && a._resetTimes.length > 0) {
+        if (a._showCumulative) {
             const rTimes2 = a._resetTimes;
             let cumS = 0, rI = 0;
             for (let i = 0; i < pts.length; i++) {
@@ -379,6 +379,39 @@ function _createHistoryGraph() {
                 cr.lineTo(lx, pad.top + gh);
                 cr.stroke();
             }
+        }
+
+        // Dotted green line at cumulative top where green is obscured by blue
+        if (a._showCumulative) {
+            const rTimes3 = a._resetTimes;
+            let cumS2 = 0, rI2 = 0;
+            let hasDash = false;
+            for (let i = 0; i < pts.length; i++) {
+                while (rI2 < rTimes3.length && rTimes3[rI2] <= pts[i].t) { cumS2 = 0; rI2++; }
+                cumS2 += Math.max(0, pts[i].v);
+                const cumH = Math.min(cumS2, maxVal) / maxVal * gh;
+                const barV = Math.min(maxVal, Math.max(0, pts[i].v));
+                const barH = (barV / maxVal) * gh;
+                // Only draw when green is obscured by blue and cumulative > 0
+                if (cumH > 0.5 && cumH <= barH + 1) {
+                    if (!hasDash) {
+                        cr.setSourceRGBA(0.2, 0.7, 0.3, 0.9);
+                        cr.setLineWidth(1.5);
+                        cr.setDash([3, 3], 0);
+                        hasDash = true;
+                    }
+                    const dur = pts[i].dur || (wSpan / pts.length);
+                    const frac = (pts[i].t - wStart) / wSpan;
+                    const fracW = dur / wSpan;
+                    const bx = pad.left + frac * gw + barGap / 2;
+                    const bw = Math.max(1, fracW * gw - barGap);
+                    const ly = baseline - cumH;
+                    cr.moveTo(bx, ly);
+                    cr.lineTo(bx + bw, ly);
+                    cr.stroke();
+                }
+            }
+            if (hasDash) cr.setDash([], 0);
         }
 
         cr.$dispose();
