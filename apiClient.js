@@ -53,6 +53,46 @@ function fetchUsage(token, callback) {
 }
 
 /**
+ * Exchanges a refresh token for a new access token via Anthropic's OAuth endpoint.
+ * callback(error, { access_token, refresh_token, expires_in }) or callback(error, null)
+ * Returns the Soup.Message for cancellation.
+ */
+function refreshToken(token, callback) {
+    const session = _getSession();
+    const url = 'https://console.anthropic.com/v1/oauth/token';
+    const message = Soup.Message.new('POST', url);
+
+    const body = JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: token,
+        client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+    });
+
+    message.set_request('application/json', Soup.MemoryUse.COPY, body);
+
+    session.queue_message(message, function (_session, msg) {
+        if (msg.status_code === 0 || msg.status_code === 2) {
+            callback('cancelled', null);
+            return;
+        }
+
+        if (msg.status_code !== 200) {
+            callback('refresh-failed', null);
+            return;
+        }
+
+        try {
+            const data = JSON.parse(msg.response_body.data);
+            callback(null, data);
+        } catch (e) {
+            callback('parse-error', null);
+        }
+    });
+
+    return message;
+}
+
+/**
  * Cancel a pending message.
  */
 function cancelMessage(message) {

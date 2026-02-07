@@ -483,6 +483,8 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._lastStatusData = null;
         this._pendingStatusMessage = null;
         this._statusTimerId = null;
+        this._refreshingToken = false;
+        this._pendingRefreshMessage = null;
 
         // Navigation offsets for history graphs (0 = rolling window, 1+ = calendar-aligned past periods)
         this._graph5hOffset = 0;
@@ -906,6 +908,16 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             return;
         }
 
+        // Proactive refresh: if token expires within 5 minutes, refresh first
+        if (cred.expiresAt) {
+            const expiresMs = new Date(cred.expiresAt).getTime();
+            const nowMs = Date.now();
+            if (expiresMs - nowMs < 5 * 60 * 1000) {
+                this._tryTokenRefresh();
+                return;
+            }
+        }
+
         // Cancel any pending request
         if (this._pendingMessage) {
             ApiClient.cancelMessage(this._pendingMessage);
@@ -920,6 +932,11 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             if (error === 'cancelled') return;
 
             if (error) {
+                // Reactive refresh: on auth-error, try refreshing the token
+                if (error === 'auth-error') {
+                    this._tryTokenRefresh();
+                    return;
+                }
                 this._lastError = error;
             } else {
                 this._lastError = null;
@@ -932,6 +949,69 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             if (this.menu.isOpen) {
                 this._updateDropdown();
             }
+        });
+    }
+
+    _tryTokenRefresh() {
+        if (this._refreshingToken) return;
+        this._refreshingToken = true;
+
+        // Show refreshing state
+        this._lastError = 'auth-refreshing';
+        this._updatePanel();
+        if (this.menu.isOpen) {
+            this._updateDropdown();
+        }
+
+        const cred = CredentialReader.readToken();
+        if (!cred.ok || !cred.refreshToken) {
+            this._refreshingToken = false;
+            this._lastError = 'auth-error';
+            this._updatePanel();
+            if (this.menu.isOpen) {
+                this._updateDropdown();
+            }
+            return;
+        }
+
+        this._pendingRefreshMessage = ApiClient.refreshToken(cred.refreshToken, (error, data) => {
+            this._pendingRefreshMessage = null;
+            this._refreshingToken = false;
+
+            if (error === 'cancelled') return;
+
+            if (error || !data || !data.access_token) {
+                this._lastError = 'auth-error';
+                this._updatePanel();
+                if (this.menu.isOpen) {
+                    this._updateDropdown();
+                }
+                return;
+            }
+
+            // Compute expiresAt from expires_in (seconds from now)
+            const expiresAt = data.expires_in
+                ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+                : null;
+
+            // Persist updated tokens
+            const writeResult = CredentialReader.writeToken(
+                data.access_token,
+                data.refresh_token || cred.refreshToken,
+                expiresAt
+            );
+
+            if (!writeResult.ok) {
+                this._lastError = 'auth-error';
+                this._updatePanel();
+                if (this.menu.isOpen) {
+                    this._updateDropdown();
+                }
+                return;
+            }
+
+            // Retry the usage fetch with the new token
+            this._refresh();
         });
     }
 
@@ -979,6 +1059,9 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
                     break;
                 case 'auth-error':
                     errMsg = 'Token expired. Run Claude Code to refresh.';
+                    break;
+                case 'auth-refreshing':
+                    errMsg = 'Token expired. Refreshing...';
                     break;
                 case 'parse-error':
                     errMsg = 'Failed to parse response.';
@@ -1192,6 +1275,10 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         if (this._pendingStatusMessage) {
             ApiClient.cancelMessage(this._pendingStatusMessage);
             this._pendingStatusMessage = null;
+        }
+        if (this._pendingRefreshMessage) {
+            ApiClient.cancelMessage(this._pendingRefreshMessage);
+            this._pendingRefreshMessage = null;
         }
 
         super.destroy();

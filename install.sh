@@ -12,4 +12,5 @@ echo "Installed to $DEST"
 gnome-extensions enable claude-usage@local 2>/dev/null || true
 
 echo "Done. Extension installed and enabled."
-echo "Log out and back in for changes to take effect."
+echo "Restarting GNOME Shell..."
+killall -3 gnome-shell 2>/dev/null || echo "Could not restart GNOME Shell. Log out and back in for changes to take effect."
