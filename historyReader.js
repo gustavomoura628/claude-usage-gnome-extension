@@ -245,3 +245,120 @@ function readHistory(windowMs, field, maxPoints, bucketMs, rateBucketMs) {
 
     return { ok: true, points, total, avgRate, peakRate, windowStart: alignedStart, windowEnd: alignedEnd };
 }
+
+/**
+ * Read history data for a fixed time range (calendar-aligned periods).
+ * @param {number} startMs - start of range in ms
+ * @param {number} endMs - end of range in ms
+ * @param {string} field - '5h' or '7d'
+ * @param {number} bucketMs - bucket size for bar chart
+ * @param {number} rateBucketMs - bucket size for rate stats
+ * @returns {{ ok: boolean, points: Array<{t: number, v: number}>, total: number, avgRate: number, peakRate: number, windowStart: number, windowEnd: number }}
+ */
+function readHistoryRange(startMs, endMs, field, bucketMs, rateBucketMs) {
+    const path = _getLogPath();
+    const file = Gio.File.new_for_path(path);
+
+    if (!file.query_exists(null)) {
+        return { ok: false, points: [], total: 0, avgRate: 0, peakRate: 0, error: 'no-file' };
+    }
+
+    let contents;
+    try {
+        const [success, bytes] = file.load_contents(null);
+        if (!success) {
+            return { ok: false, points: [], total: 0, avgRate: 0, peakRate: 0, error: 'read-failed' };
+        }
+        contents = imports.byteArray.toString(bytes);
+    } catch (e) {
+        return { ok: false, points: [], total: 0, avgRate: 0, peakRate: 0, error: 'read-failed' };
+    }
+
+    const lines = contents.split('\n');
+    const filtered = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        let entry;
+        try {
+            entry = JSON.parse(line);
+        } catch (e) {
+            continue;
+        }
+
+        if (!entry.ts) continue;
+        const tMs = new Date(entry.ts).getTime();
+        if (isNaN(tMs) || tMs < startMs || tMs > endMs) continue;
+
+        const pct = entry[field];
+        if (pct == null || typeof pct !== 'number') continue;
+
+        const tier = entry.tier || null;
+        const limits = _getLimits(tier);
+        const credits = (pct / 100) * limits[field];
+
+        filtered.push({ t: tMs, v: credits });
+    }
+
+    if (filtered.length < 2) {
+        return { ok: true, points: [], total: 0, avgRate: 0, peakRate: 0, windowStart: startMs, windowEnd: endMs };
+    }
+
+    filtered.sort((a, b) => a.t - b.t);
+
+    // Compute deltas
+    const deltas = [];
+    for (let i = 1; i < filtered.length; i++) {
+        const prev = filtered[i - 1].v;
+        const curr = filtered[i].v;
+        const delta = curr >= prev ? curr - prev : curr;
+        deltas.push({ t: filtered[i].t, v: delta });
+    }
+
+    // Total
+    let total = 0;
+    for (let i = 0; i < deltas.length; i++) {
+        total += deltas[i].v;
+    }
+    total = Math.round(total);
+
+    // Rate stats
+    const windowMs = endMs - startMs;
+    const numBuckets = Math.max(1, Math.floor(windowMs / rateBucketMs));
+    const avgRate = Math.round(total / numBuckets);
+
+    let peakRate = 0;
+    for (let i = 0; i < numBuckets; i++) {
+        const bStart = startMs + i * rateBucketMs;
+        const bEnd = bStart + rateBucketMs;
+        let bSum = 0;
+        for (let j = 0; j < deltas.length; j++) {
+            if (deltas[j].t >= bStart && deltas[j].t < bEnd) {
+                bSum += deltas[j].v;
+            }
+        }
+        if (bSum > peakRate) peakRate = bSum;
+    }
+    peakRate = Math.round(peakRate);
+
+    // Bucket into bars (no partial-bucket scaling for historical periods)
+    const points = [];
+    if (bucketMs > 0) {
+        let bStart = startMs;
+        while (bStart < endMs) {
+            const bEnd = bStart + bucketMs;
+            let bSum = 0;
+            for (let j = 0; j < deltas.length; j++) {
+                if (deltas[j].t >= bStart && deltas[j].t < bEnd) {
+                    bSum += deltas[j].v;
+                }
+            }
+            points.push({ t: bStart, v: bSum, dur: bucketMs });
+            bStart += bucketMs;
+        }
+    }
+
+    return { ok: true, points, total, avgRate, peakRate, windowStart: startMs, windowEnd: endMs };
+}

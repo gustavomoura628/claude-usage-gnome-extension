@@ -394,6 +394,78 @@ function _updateHistoryGraph(area, statsLabel, windowMs, field, labelFn, maxPoin
     area.queue_repaint();
 }
 
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Compute a calendar-aligned time range for a given offset.
+ * @param {string} type - 'day' or 'week'
+ * @param {number} offset - 0 = current (rolling), 1 = last complete period, etc.
+ * @returns {null|{startMs: number, endMs: number, label: string}}
+ */
+function _computeTimeRange(type, offset) {
+    if (offset === 0) return null; // use rolling window
+
+    const now = new Date();
+
+    if (type === 'day') {
+        // Today's midnight
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        const endDate = new Date(today.getTime() - (offset - 1) * 86400000);
+        const startDate = new Date(endDate.getTime() - 86400000);
+        const d = startDate;
+        const label = DAY_NAMES[d.getDay()] + ' ' + MONTH_NAMES_SHORT[d.getMonth()] + ' ' + d.getDate();
+        return { startMs: startDate.getTime(), endMs: endDate.getTime(), label };
+    }
+
+    if (type === 'week') {
+        // Find most recent Sunday at midnight
+        const thisSunday = new Date(now);
+        thisSunday.setHours(0, 0, 0, 0);
+        thisSunday.setDate(thisSunday.getDate() - thisSunday.getDay()); // roll back to Sunday
+        const endDate = new Date(thisSunday.getTime() - (offset - 1) * 7 * 86400000);
+        const startDate = new Date(endDate.getTime() - 7 * 86400000);
+        const s = startDate;
+        const e = new Date(endDate.getTime() - 86400000); // Saturday
+        const label = MONTH_NAMES_SHORT[s.getMonth()] + ' ' + s.getDate() +
+            ' \u2013 ' + MONTH_NAMES_SHORT[e.getMonth()] + ' ' + e.getDate();
+        return { startMs: startDate.getTime(), endMs: endDate.getTime(), label };
+    }
+
+    return null;
+}
+
+function _updateHistoryGraphRange(area, statsLabel, startMs, endMs, field, labelFn, bucketMs, rateBucketMs, rateUnit) {
+    const result = HistoryReader.readHistoryRange(startMs, endMs, field, bucketMs, rateBucketMs);
+
+    if (!result.ok || result.points.length === 0) {
+        area._points = [];
+        area._noData = true;
+        area._maxVal = 1;
+        area._xLabels = labelFn(startMs, endMs);
+        statsLabel.set_text('No data');
+    } else {
+        area._points = result.points;
+        area._noData = false;
+        area._windowStart = result.windowStart;
+        area._windowEnd = result.windowEnd;
+        area._xLabels = labelFn(result.windowStart, result.windowEnd);
+        let pointMax = 0;
+        for (let i = 0; i < result.points.length; i++) {
+            if (result.points[i].v > pointMax) pointMax = result.points[i].v;
+        }
+        area._maxVal = pointMax > 0 ? pointMax * 1.15 : 1;
+        const fmt = HistoryReader.formatCredits;
+        statsLabel.set_text(
+            'avg ' + fmt(result.avgRate) + '/' + rateUnit +
+            '  |  peak ' + fmt(result.peakRate) + '/' + rateUnit +
+            '  |  total ' + fmt(result.total)
+        );
+    }
+
+    area.queue_repaint();
+}
+
 // ---- Main indicator class ----
 
 var ClaudeUsageIndicator = GObject.registerClass(
@@ -412,6 +484,10 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._pendingStatusMessage = null;
         this._statusTimerId = null;
 
+        // Navigation offsets for history graphs (0 = rolling window, 1+ = calendar-aligned past periods)
+        this._graph5hOffset = 0;
+        this._graph7dOffset = 0;
+
         this._buildPanelWidget();
         this._buildDropdownMenu();
 
@@ -429,6 +505,8 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
                 this._loadHistoryGraphs();
             } else {
                 this._stopCountdown();
+                this._graph5hOffset = 0;
+                this._graph7dOffset = 0;
             }
         });
 
@@ -623,6 +701,49 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             style_class: 'claude-history-graph-label',
             text: '5h Credit Rate (24h)',
         }));
+
+        // Nav row for 5h graph
+        const navRow5h = new St.BoxLayout({
+            style_class: 'claude-history-nav-row',
+            x_align: Clutter.ActorAlign.END,
+            x_expand: true,
+        });
+        this._navLeft5h = new St.Label({
+            style_class: 'claude-history-nav-arrow',
+            text: '\u25C0',
+            reactive: true,
+            track_hover: true,
+        });
+        this._navLeft5h.connect('button-press-event', () => {
+            this._graph5hOffset++;
+            this._loadGraph5h();
+            return Clutter.EVENT_STOP;
+        });
+        this._navLabel5h = new St.Label({
+            style_class: 'claude-history-nav-label',
+            text: 'Today',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._navRight5h = new St.Label({
+            style_class: 'claude-history-nav-arrow',
+            text: '\u25B6',
+            reactive: true,
+            track_hover: true,
+            opacity: 0,
+        });
+        this._navRight5h.connect('button-press-event', () => {
+            if (this._graph5hOffset > 0) {
+                this._graph5hOffset--;
+                this._loadGraph5h();
+            }
+            return Clutter.EVENT_STOP;
+        });
+        navRow5h.add_child(this._navLeft5h);
+        navRow5h.add_child(this._navLabel5h);
+        navRow5h.add_child(this._navRight5h);
+        dropBox.add_child(navRow5h);
+
         this._graph5h = _createHistoryGraph();
         dropBox.add_child(this._graph5h);
         this._graphStats5h = new St.Label({
@@ -636,6 +757,49 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             style_class: 'claude-history-graph-label',
             text: '7d Credit Rate (7d)',
         }));
+
+        // Nav row for 7d graph
+        const navRow7d = new St.BoxLayout({
+            style_class: 'claude-history-nav-row',
+            x_align: Clutter.ActorAlign.END,
+            x_expand: true,
+        });
+        this._navLeft7d = new St.Label({
+            style_class: 'claude-history-nav-arrow',
+            text: '\u25C0',
+            reactive: true,
+            track_hover: true,
+        });
+        this._navLeft7d.connect('button-press-event', () => {
+            this._graph7dOffset++;
+            this._loadGraph7d();
+            return Clutter.EVENT_STOP;
+        });
+        this._navLabel7d = new St.Label({
+            style_class: 'claude-history-nav-label',
+            text: 'This week',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._navRight7d = new St.Label({
+            style_class: 'claude-history-nav-arrow',
+            text: '\u25B6',
+            reactive: true,
+            track_hover: true,
+            opacity: 0,
+        });
+        this._navRight7d.connect('button-press-event', () => {
+            if (this._graph7dOffset > 0) {
+                this._graph7dOffset--;
+                this._loadGraph7d();
+            }
+            return Clutter.EVENT_STOP;
+        });
+        navRow7d.add_child(this._navLeft7d);
+        navRow7d.add_child(this._navLabel7d);
+        navRow7d.add_child(this._navRight7d);
+        dropBox.add_child(navRow7d);
+
         this._graph7d = _createHistoryGraph();
         dropBox.add_child(this._graph7d);
         this._graphStats7d = new St.Label({
@@ -960,12 +1124,47 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         }
     }
 
-    _loadHistoryGraphs() {
+    _loadGraph5h() {
         const MIN_MS = 60 * 1000;
         const HOUR_MS = 3600 * 1000;
+
+        const range = _computeTimeRange('day', this._graph5hOffset);
+        if (!range) {
+            // Rolling window (offset 0)
+            _updateHistoryGraph(this._graph5h, this._graphStats5h, 24 * HOUR_MS, '5h', _computeXLabels24h, 0, 30 * MIN_MS, HOUR_MS, 'hr');
+            this._navLabel5h.set_text('Today');
+            this._navRight5h.opacity = 0;
+            this._navRight5h.reactive = false;
+        } else {
+            _updateHistoryGraphRange(this._graph5h, this._graphStats5h, range.startMs, range.endMs, '5h', _computeXLabels24h, 30 * MIN_MS, HOUR_MS, 'hr');
+            this._navLabel5h.set_text(range.label);
+            this._navRight5h.opacity = 255;
+            this._navRight5h.reactive = true;
+        }
+    }
+
+    _loadGraph7d() {
+        const HOUR_MS = 3600 * 1000;
         const DAY_MS = 24 * HOUR_MS;
-        _updateHistoryGraph(this._graph5h, this._graphStats5h, 24 * HOUR_MS, '5h', _computeXLabels24h, 0, 30 * MIN_MS, HOUR_MS, 'hr');
-        _updateHistoryGraph(this._graph7d, this._graphStats7d, 7 * DAY_MS, '7d', _computeXLabels7d, 0, DAY_MS, DAY_MS, 'day');
+
+        const range = _computeTimeRange('week', this._graph7dOffset);
+        if (!range) {
+            // Rolling window (offset 0)
+            _updateHistoryGraph(this._graph7d, this._graphStats7d, 7 * DAY_MS, '7d', _computeXLabels7d, 0, DAY_MS, DAY_MS, 'day');
+            this._navLabel7d.set_text('This week');
+            this._navRight7d.opacity = 0;
+            this._navRight7d.reactive = false;
+        } else {
+            _updateHistoryGraphRange(this._graph7d, this._graphStats7d, range.startMs, range.endMs, '7d', _computeXLabels7d, DAY_MS, DAY_MS, 'day');
+            this._navLabel7d.set_text(range.label);
+            this._navRight7d.opacity = 255;
+            this._navRight7d.reactive = true;
+        }
+    }
+
+    _loadHistoryGraphs() {
+        this._loadGraph5h();
+        this._loadGraph7d();
     }
 
     destroy() {

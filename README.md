@@ -24,6 +24,7 @@ Click to open the dropdown with usage details, credit history graphs, and servic
   - Partial buckets (current period) are rate-scaled and shown at proportional width
   - Summary stats: avg/period, peak/period, and total credits consumed
   - Downsampling uses LTTB (Largest Triangle Three Buckets) when needed
+  - **Navigation arrows** — `◀`/`▶` buttons above each graph let you browse previous days (for the 24h graph) or previous weeks (for the 7d graph). Periods are calendar-aligned: midnight-to-midnight for days, Sunday-to-Saturday for weeks. The default view (offset 0) shows the current rolling window. Navigation resets when the dropdown closes.
 - **Service status dot** — colored indicator showing the current status of Claude services (polls [status.claude.com](https://status.claude.com) every 2 minutes)
 - Dropdown shows per-component status (claude.ai, API, Claude Code) and active incidents with a link to the status page
 
@@ -51,11 +52,13 @@ The extension logs usage data every 5 minutes to `~/.local/share/claude-usage/hi
 {"ts":"2026-02-04T03:59:24.336Z","plan":"max","tier":"default_claude_max_5x","5h":10,"5h_resets":"2026-02-04T08:00:00Z","7d":26,"7d_resets":"2026-02-06T14:00:00Z","sonnet_7d":0}
 ```
 
-Fields: timestamp, subscription plan, rate limit tier, 5-hour and 7-day utilization percentages, window reset times, and per-model breakdowns (when available). Window start times can be derived from the reset times (subtract 5h or 7d).
+Fields: timestamp, subscription plan, rate limit tier, 5-hour and 7-day utilization percentages, and window reset times. Per-model 7d breakdowns (`sonnet_7d`, `opus_7d`, `cowork_7d`) are included when the API reports them, though in practice only `sonnet_7d` has been observed. Window start times can be derived from the reset times (subtract 5h or 7d).
 
 ## How it works
 
 The extension reads your OAuth token from `~/.claude/.credentials.json` and polls `https://api.anthropic.com/api/oauth/usage` every 45 seconds. Service status is fetched from `https://status.claude.com/api/v2/summary.json` every 2 minutes (no auth needed). No browser cookies needed.
+
+Credit limits per tier are based on data from [she-llac.com/claude-limits](https://she-llac.com/claude-limits) and are used to convert utilization percentages into absolute credit values for the history graphs.
 
 ## Files
 
@@ -69,6 +72,7 @@ The extension reads your OAuth token from `~/.claude/.credentials.json` and poll
 | `usageLogger.js` | Appends usage snapshots to JSONL log file |
 | `historyReader.js` | Reads JSONL history, computes credit deltas, clock-aligned bucketing, LTTB downsampling |
 | `stylesheet.css` | Dropdown and label styling |
+| `CLAUDE_USAGE_API.md` | API endpoint documentation with request/response examples |
 
 ## Uninstall
 
@@ -76,3 +80,8 @@ The extension reads your OAuth token from `~/.claude/.credentials.json` and poll
 gnome-extensions disable claude-usage@local
 rm -rf ~/.local/share/gnome-shell/extensions/claude-usage@local
 ```
+
+## Credits
+
+- [claude-counter](https://github.com/she-llac/claude-counter) by she-llac — the browser extension that inspired this project
+- [she-llac.com/claude-limits](https://she-llac.com/claude-limits) by she-llac — credit limit data per tier used for converting utilization percentages to absolute credit values

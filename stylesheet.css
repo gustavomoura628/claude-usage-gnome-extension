@@ -246,3 +246,24 @@
     color: #888888;
     padding-bottom: 2px;
 }
+
+.claude-history-nav-row {
+    spacing: 6px;
+}
+
+.claude-history-nav-arrow {
+    font-size: 16px;
+    color: #888888;
+    padding: 0 4px;
+}
+
+.claude-history-nav-arrow:hover {
+    color: #cccccc;
+}
+
+.claude-history-nav-label {
+    font-size: 11px;
+    color: #888888;
+    min-width: 100px;
+    text-align: center;
+}
