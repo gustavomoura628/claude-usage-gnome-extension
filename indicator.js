@@ -205,6 +205,8 @@ function _createHistoryGraph() {
     area._noData = false;
     area._maxVal = 1;
     area._unitCredits = 0;
+    area._resetTimes = [];
+    area._windowPeriodMs = 0;
     area._windowStart = 0;
     area._windowEnd = 1;
 
@@ -326,6 +328,36 @@ function _createHistoryGraph() {
             }
         }
 
+        // Window reset/start boundary lines
+        const rTimes = a._resetTimes;
+        const wPeriod = a._windowPeriodMs;
+        if (rTimes.length > 0 && wPeriod > 0) {
+            const resetMs = new Set(rTimes);
+            const startMs = new Set(rTimes.map(t => t - wPeriod));
+            // Collect all boundary positions
+            const allTimes = new Set([...resetMs, ...startMs]);
+            cr.setLineWidth(1);
+            for (const t of allTimes) {
+                const f = (t - wStart) / wSpan;
+                if (f <= 0 || f >= 1) continue;
+                const lx = pad.left + f * gw;
+                const isReset = resetMs.has(t);
+                const isStart = startMs.has(t);
+                // Check near-match (within 1 min) for the other type
+                const nearReset = isReset || [...resetMs].some(r => Math.abs(r - t) <= 60000);
+                const nearStart = isStart || [...startMs].some(s => Math.abs(s - t) <= 60000);
+                if (nearReset && nearStart)
+                    cr.setSourceRGBA(0.55, 0.25, 0.85, 0.35); // purple
+                else if (nearReset)
+                    cr.setSourceRGBA(1, 0.3, 0.3, 0.25);      // red
+                else
+                    cr.setSourceRGBA(0.3, 0.5, 1, 0.25);       // blue
+                cr.moveTo(lx, pad.top);
+                cr.lineTo(lx, pad.top + gh);
+                cr.stroke();
+            }
+        }
+
         cr.$dispose();
     });
 
@@ -404,6 +436,8 @@ function _updateHistoryGraph(area, statsLabel, windowMs, field, labelFn, maxPoin
             if (result.points[i].v > pointMax) pointMax = result.points[i].v;
         }
         area._unitCredits = PRO_1X_LIMITS[field] || 0;
+        area._resetTimes = result.resetTimes || [];
+        area._windowPeriodMs = { '5h': 5*3600*1000, '7d': 7*24*3600*1000 }[field] || 0;
         const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
         area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
         const fmt = HistoryReader.formatCredits;
@@ -478,6 +512,8 @@ function _updateHistoryGraphRange(area, statsLabel, startMs, endMs, field, label
             if (result.points[i].v > pointMax) pointMax = result.points[i].v;
         }
         area._unitCredits = PRO_1X_LIMITS[field] || 0;
+        area._resetTimes = result.resetTimes || [];
+        area._windowPeriodMs = { '5h': 5*3600*1000, '7d': 7*24*3600*1000 }[field] || 0;
         const minMax = area._unitCredits > 0 ? area._unitCredits * 1.15 : 0;
         area._maxVal = Math.max(pointMax > 0 ? pointMax * 1.15 : 1, minMax);
         const fmt = HistoryReader.formatCredits;

@@ -124,6 +124,7 @@ function readHistory(windowMs, field, maxPoints, bucketMs, rateBucketMs) {
     const cutoff = nowMs - windowMs;
     const lines = contents.split('\n');
     const filtered = [];
+    const resetSet = new Set();
     let lastTier = null;
 
     for (let i = 0; i < lines.length; i++) {
@@ -150,10 +151,18 @@ function readHistory(windowMs, field, maxPoints, bucketMs, rateBucketMs) {
 
         filtered.push({ t: tMs, v: credits });
         lastTier = tier;
+
+        const resetsIso = entry[field + '_resets'];
+        if (resetsIso) {
+            const rMs = new Date(resetsIso).getTime();
+            if (!isNaN(rMs)) resetSet.add(Math.round(rMs / 60000) * 60000);
+        }
     }
 
+    const resetTimes = Array.from(resetSet).sort((a, b) => a - b);
+
     if (filtered.length < 2) {
-        return { ok: true, points: [], total: 0, avgRate: 0, peakRate: 0 };
+        return { ok: true, points: [], total: 0, avgRate: 0, peakRate: 0, resetTimes };
     }
 
     // Sort by time
@@ -243,7 +252,7 @@ function readHistory(windowMs, field, maxPoints, bucketMs, rateBucketMs) {
         points = deltas;
     }
 
-    return { ok: true, points, total, avgRate, peakRate, windowStart: alignedStart, windowEnd: alignedEnd };
+    return { ok: true, points, total, avgRate, peakRate, windowStart: alignedStart, windowEnd: alignedEnd, resetTimes };
 }
 
 /**
@@ -276,6 +285,7 @@ function readHistoryRange(startMs, endMs, field, bucketMs, rateBucketMs) {
 
     const lines = contents.split('\n');
     const filtered = [];
+    const resetSet = new Set();
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -300,10 +310,18 @@ function readHistoryRange(startMs, endMs, field, bucketMs, rateBucketMs) {
         const credits = (pct / 100) * limits[field];
 
         filtered.push({ t: tMs, v: credits });
+
+        const resetsIso = entry[field + '_resets'];
+        if (resetsIso) {
+            const rMs = new Date(resetsIso).getTime();
+            if (!isNaN(rMs)) resetSet.add(Math.round(rMs / 60000) * 60000);
+        }
     }
 
+    const resetTimes = Array.from(resetSet).sort((a, b) => a - b);
+
     if (filtered.length < 2) {
-        return { ok: true, points: [], total: 0, avgRate: 0, peakRate: 0, windowStart: startMs, windowEnd: endMs };
+        return { ok: true, points: [], total: 0, avgRate: 0, peakRate: 0, windowStart: startMs, windowEnd: endMs, resetTimes };
     }
 
     filtered.sort((a, b) => a.t - b.t);
@@ -360,5 +378,5 @@ function readHistoryRange(startMs, endMs, field, bucketMs, rateBucketMs) {
         }
     }
 
-    return { ok: true, points, total, avgRate, peakRate, windowStart: startMs, windowEnd: endMs };
+    return { ok: true, points, total, avgRate, peakRate, windowStart: startMs, windowEnd: endMs, resetTimes };
 }
