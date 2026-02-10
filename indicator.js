@@ -1118,11 +1118,14 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             return;
         }
 
-        // Proactive refresh: if token expires within 5 minutes, refresh first
+        this._lastUsedToken = cred.token;
+
+        // Only refresh if token has been expired for over 1 minute
+        // (gives Claude Code time to refresh it first)
         if (cred.expiresAt) {
             const expiresMs = new Date(cred.expiresAt).getTime();
             const nowMs = Date.now();
-            if (expiresMs - nowMs < 5 * 60 * 1000) {
+            if (nowMs > expiresMs + 60 * 1000) {
                 this._tryTokenRefresh();
                 return;
             }
@@ -1164,6 +1167,34 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
 
     _tryTokenRefresh() {
         if (this._refreshingToken) return;
+
+        // Re-read credentials — Claude Code may have already refreshed
+        const cred = CredentialReader.readToken();
+        if (!cred.ok || !cred.refreshToken) {
+            this._lastError = 'auth-error';
+            this._updatePanel();
+            if (this.menu.isOpen) {
+                this._updateDropdown();
+            }
+            return;
+        }
+
+        // If the token on disk differs from what we last used, Claude Code
+        // already refreshed — just retry with the new token, no refresh needed
+        if (this._lastUsedToken && cred.token !== this._lastUsedToken) {
+            this._refresh();
+            return;
+        }
+
+        // If token on disk is still valid (not yet expired), just retry
+        if (cred.expiresAt) {
+            const expiresMs = new Date(cred.expiresAt).getTime();
+            if (Date.now() < expiresMs) {
+                this._refresh();
+                return;
+            }
+        }
+
         this._refreshingToken = true;
 
         // Show refreshing state
@@ -1171,17 +1202,6 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._updatePanel();
         if (this.menu.isOpen) {
             this._updateDropdown();
-        }
-
-        const cred = CredentialReader.readToken();
-        if (!cred.ok || !cred.refreshToken) {
-            this._refreshingToken = false;
-            this._lastError = 'auth-error';
-            this._updatePanel();
-            if (this.menu.isOpen) {
-                this._updateDropdown();
-            }
-            return;
         }
 
         this._pendingRefreshMessage = ApiClient.refreshToken(cred.refreshToken, (error, data) => {
