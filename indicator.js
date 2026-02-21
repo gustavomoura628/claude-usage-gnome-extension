@@ -670,9 +670,6 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._lastStatusData = null;
         this._pendingStatusMessage = null;
         this._statusTimerId = null;
-        this._refreshingToken = false;
-        this._pendingRefreshMessage = null;
-
         // Navigation offsets for history graphs (0 = rolling window, 1+ = calendar-aligned past periods)
         this._graph5hOffset = 0;
         this._graph7dOffset = 0;
@@ -1118,15 +1115,15 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             return;
         }
 
-        this._lastUsedToken = cred.token;
-
-        // Only refresh if token has been expired for over 1 minute
-        // (gives Claude Code time to refresh it first)
+        // Skip API call if token is expired — wait for Claude Code to refresh it
         if (cred.expiresAt) {
             const expiresMs = new Date(cred.expiresAt).getTime();
-            const nowMs = Date.now();
-            if (nowMs > expiresMs + 60 * 1000) {
-                this._tryTokenRefresh();
+            if (Date.now() > expiresMs) {
+                this._lastError = 'token-expired';
+                this._updatePanel();
+                if (this.menu.isOpen) {
+                    this._updateDropdown();
+                }
                 return;
             }
         }
@@ -1145,11 +1142,6 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             if (error === 'cancelled') return;
 
             if (error) {
-                // Reactive refresh: on auth-error, try refreshing the token
-                if (error === 'auth-error') {
-                    this._tryTokenRefresh();
-                    return;
-                }
                 this._lastError = error;
             } else {
                 this._lastError = null;
@@ -1162,86 +1154,6 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             if (this.menu.isOpen) {
                 this._updateDropdown();
             }
-        });
-    }
-
-    _tryTokenRefresh() {
-        if (this._refreshingToken) return;
-
-        // Re-read credentials — Claude Code may have already refreshed
-        const cred = CredentialReader.readToken();
-        if (!cred.ok || !cred.refreshToken) {
-            this._lastError = 'auth-error';
-            this._updatePanel();
-            if (this.menu.isOpen) {
-                this._updateDropdown();
-            }
-            return;
-        }
-
-        // If the token on disk differs from what we last used, Claude Code
-        // already refreshed — just retry with the new token, no refresh needed
-        if (this._lastUsedToken && cred.token !== this._lastUsedToken) {
-            this._refresh();
-            return;
-        }
-
-        // If token on disk is still valid (not yet expired), just retry
-        if (cred.expiresAt) {
-            const expiresMs = new Date(cred.expiresAt).getTime();
-            if (Date.now() < expiresMs) {
-                this._refresh();
-                return;
-            }
-        }
-
-        this._refreshingToken = true;
-
-        // Show refreshing state
-        this._lastError = 'auth-refreshing';
-        this._updatePanel();
-        if (this.menu.isOpen) {
-            this._updateDropdown();
-        }
-
-        this._pendingRefreshMessage = ApiClient.refreshToken(cred.refreshToken, (error, data) => {
-            this._pendingRefreshMessage = null;
-            this._refreshingToken = false;
-
-            if (error === 'cancelled') return;
-
-            if (error || !data || !data.access_token) {
-                this._lastError = 'auth-error';
-                this._updatePanel();
-                if (this.menu.isOpen) {
-                    this._updateDropdown();
-                }
-                return;
-            }
-
-            // Compute expiresAt from expires_in (seconds from now)
-            const expiresAt = data.expires_in
-                ? new Date(Date.now() + data.expires_in * 1000).toISOString()
-                : null;
-
-            // Persist updated tokens
-            const writeResult = CredentialReader.writeToken(
-                data.access_token,
-                data.refresh_token || cred.refreshToken,
-                expiresAt
-            );
-
-            if (!writeResult.ok) {
-                this._lastError = 'auth-error';
-                this._updatePanel();
-                if (this.menu.isOpen) {
-                    this._updateDropdown();
-                }
-                return;
-            }
-
-            // Retry the usage fetch with the new token
-            this._refresh();
         });
     }
 
@@ -1290,8 +1202,8 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
                 case 'auth-error':
                     errMsg = 'Token expired. Run Claude Code to refresh.';
                     break;
-                case 'auth-refreshing':
-                    errMsg = 'Token expired. Refreshing...';
+                case 'token-expired':
+                    errMsg = 'Token expired. Run Claude Code to refresh.';
                     break;
                 case 'parse-error':
                     errMsg = 'Failed to parse response.';
@@ -1506,11 +1418,6 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             ApiClient.cancelMessage(this._pendingStatusMessage);
             this._pendingStatusMessage = null;
         }
-        if (this._pendingRefreshMessage) {
-            ApiClient.cancelMessage(this._pendingRefreshMessage);
-            this._pendingRefreshMessage = null;
-        }
-
         super.destroy();
     }
 });
