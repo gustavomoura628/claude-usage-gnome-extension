@@ -12,7 +12,7 @@ const CredentialReader = Me.imports.credentialReader;
 const UsageLogger = Me.imports.usageLogger;
 const HistoryReader = Me.imports.historyReader;
 
-const REFRESH_INTERVAL_S = 45;
+const REFRESH_INTERVAL_S = 300;
 const STATUS_REFRESH_INTERVAL_S = 120;
 const FIVE_HOUR_S = 5 * 3600;
 const SEVEN_DAY_S = 7 * 24 * 3600;
