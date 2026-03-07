@@ -26,6 +26,7 @@ function fetchUsage(token, callback) {
 
     message.request_headers.append('Authorization', 'Bearer ' + token);
     message.request_headers.append('anthropic-beta', 'oauth-2025-04-20');
+    message.request_headers.append('User-Agent', 'claude-code/2.1.71');
 
     session.queue_message(message, function (_session, msg) {
         if (msg.status_code !== 200) {
